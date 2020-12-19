@@ -5,9 +5,10 @@ from torch import nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torchvision import transforms
+import torchvision
 from torchvision.datasets import MNIST
 from torchvision.utils import save_image
-from torchvision.utils.tensorboard import SummaryWriter
+from torch.utils.tensorboard import SummaryWriter
 
 # NOTE: Directory to store reconstructed images
 # to see progress during training.
@@ -54,7 +55,8 @@ class Autoencoder(nn.Module):
         return x
 
 if __name__ == '__main__':
-    dataset = MNIST('./data', transform=img_transform)
+    writer = SummaryWriter()
+    dataset = MNIST('./data', transform=img_transform, download=True)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
     # Moves all model parameters and buffer to the GPU
@@ -65,23 +67,35 @@ if __name__ == '__main__':
         model.parameters(), lr=learning_rate, weight_decay=1e-5
     )
     for epoch in range(num_epochs):
+        loss_val = float("Inf")
+        images = None
         for data in dataloader:
             img, _ = data
             img = img.view(img.size(0), -1)
             # img = Variable(img).cuda()
             img = Variable(img)
+
+            images = img
             # ===================forward=====================
             output = model(img)
             loss = criterion(output, img)
+            loss_val = float(loss)
+
             # ===================backward====================
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
         # ===================log========================
+        grid = torchvision.utils.make_grid(images)
+        writer.add_image('images', grid, 0)
+        writer.add_graph(model, images)
+        writer.add_scalar('Loss', loss_val, epoch)
+
         print('epoch [{}/{}], loss:{:.4f}'
-              .format(epoch + 1, num_epochs, loss.data[0]))
+              .format(epoch + 1, num_epochs, loss_val))
         if epoch % 10 == 0:
             pic = to_img(output.cpu().data)
             save_image(pic, './mlp_img/image_{}.png'.format(epoch))
-    
+
+    writer.close()
     torch.save(model.state_dict(), './autoencoder.pth')
